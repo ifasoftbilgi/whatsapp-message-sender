@@ -4,18 +4,19 @@ const express = require('express');
 const bodyParser = require('body-parser');
 const axios = require('axios');
 const fs = require('fs');
+const path = require('path');
 require('dotenv').config();
-const API_KEY = process.env.API_KEY; // Güvenli bir şekilde sakla!
 
+const API_KEY = process.env.API_KEY;
 const app = express();
-app.use(bodyParser.json()); // JSON gövdesi kullanmak için body-parser'ı ekliyoruz
+app.use(bodyParser.json());
 
+// Güvenlik: API anahtar kontrolü
 app.use((req, res, next) => {
-    res.header("Access-Control-Allow-Origin", "*"); // Tüm domainlere izin vermek için
+    res.header("Access-Control-Allow-Origin", "*");
     res.header("Access-Control-Allow-Headers", "Origin, X-Requested-With, Content-Type, Accept");
 
-    const apiKey = req.headers['x-api-key']; // İstek başlığından API key'i al
-
+    const apiKey = req.headers['x-api-key'];
     if (!apiKey || apiKey !== API_KEY) {
         return res.status(401).json({ error: "Unauthorized: Invalid API Key" });
     }
@@ -23,129 +24,92 @@ app.use((req, res, next) => {
     next();
 });
 
-// WhatsApp istemcisini başlat
+// Log klasörü ve fonksiyon
+const logDir = path.join(__dirname, 'logs');
+if (!fs.existsSync(logDir)) {
+    fs.mkdirSync(logDir);
+}
+function logToFile(data) {
+    const logPath = path.join(logDir, 'whatsapp.log');
+    const timestamp = new Date().toISOString();
+    fs.appendFileSync(logPath, `[${timestamp}] ${data}\n`);
+}
+
+// WhatsApp istemcisi
 const client = new Client({
     authStrategy: new LocalAuth(),
     puppeteer: {
-      executablePath: '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
-  }
-  });
+        executablePath: '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
+        args: ['--no-sandbox', '--disable-setuid-sandbox']
+    }
+});
 
-// QR kodu terminalde göster
 client.on('qr', (qr) => {
     qrcode.generate(qr, { small: true });
     console.log('QR Kodunu tarayın.');
 });
 
-// WhatsApp Web'e başarılı şekilde bağlanıldığında
 client.on('ready', () => {
     console.log('WhatsApp Web bağlantısı kuruldu.');
 });
 
-// POST isteği ile mesaj gönderme
-app.post('/send-message', (req, res) => {
-    const number = req.body.number; // İstek gövdesinden telefon numarasını alıyoruzz
-    const message = req.body.message; // İstek gövdesinden mesajı alıyoruz
+// ✅ MESAJ gönderme
+app.post('/send-message', async (req, res) => {
+    const number = req.body.number;
+    const message = req.body.message;
+    const chatId = number + '@c.us';
 
-    const chatId = number + '@c.us'; // Chat ID'yi oluşturuyoruz
-
-    client.sendMessage(chatId, message).then(response => {
-        console.log(`Mesaj başarıyla gönderildi: ${response.id.id}`);
-        res.status(200).send('Mesaj başarıyla gönderildi.>');
-    }).catch(err => {
-        console.error('Mesaj gönderilemedi:', err);
-        res.status(500).send('Mesaj gönderilemedi');
-    });
+    try {
+        const response = await client.sendMessage(chatId, message);
+        const log = `✅ MESAJ | IP: ${req.ip} | Numara: ${number} | Mesaj: ${message} | ID: ${response.id.id}`;
+        logToFile(log);
+        return res.status(200).send('Mesaj başarıyla gönderildi.');
+    } catch (err) {
+        const log = `❌ MESAJ | IP: ${req.ip} | Numara: ${number} | Mesaj: ${message} | HATA: ${err.message}`;
+        logToFile(log);
+        return res.status(500).send('Mesaj gönderilemedi.');
+    }
 });
 
-// POST isteği ile resim gönderme
-/*app.post('/send-media', (req, res) => {
-    const number = req.body.number; // Telefon numarası
-    const filePath = req.body.filePath; // Gönderilecek dosya yolu
-
-    const chatId = number + '@c.us'; // Chat ID'yi oluşturuyoruz
-
-    // Dosyanın mevcut olup olmadığını kontrol et
-    if (!fs.existsSync(filePath)) {
-        return res.status(400).send('Dosya bulunamadı.');
-    }
-
-    // Dosyayı yükleyip MessageMedia objesi oluşturma
-    const media = MessageMedia.fromFilePath(filePath);
-
-    // Medya gönderimi
-    client.sendMessage(chatId, media).then(response => {
-        console.log(`Medya başarıyla gönderildi: ${response.id.id}`);
-        res.status(200).send('Medya başarıyla gönderildi.');
-    }).catch(err => {
-        console.error('Medya gönderilemedi:', err);
-        res.status(500).send('Medya gönderilemedi.');
-    });
-});*/
+// ✅ MEDYA gönderme
 app.post('/send-media', async (req, res) => {
-    const number = req.body.number; // Telefon numarası
-    const fileUrl = req.body.fileUrl; // Resim dosyasının URL'si
-
-    const chatId = number + '@c.us'; // Chat ID'yi oluşturuyoruz
+    const number = req.body.number;
+    const fileUrl = req.body.fileUrl;
+    const chatId = number + '@c.us';
 
     try {
-        // Resmi URL'den indir
-        const response = await axios({
-            url: fileUrl,
-            method: 'GET',
-            responseType: 'arraybuffer' // Resmi binary formatında alıyoruz
-        });
-
-        // Dosyayı Buffer olarak kullan ve base64'e çevir
+        const response = await axios.get(fileUrl, { responseType: 'arraybuffer' });
         const media = new MessageMedia('image/jpeg', Buffer.from(response.data).toString('base64'));
-
-        // WhatsApp üzerinden resim gönder
-        client.sendMessage(chatId, media).then(response => {
-            console.log('Resim başarıyla gönderildi:', response.id.id);
-            res.status(200).send('Resim başarıyla gönderildi.');
-        }).catch(err => {
-            console.error('Resim gönderilemedi:', err);
-            res.status(500).send('Resim gönderilemedi.');
-        });
-
-    } catch (error) {
-        console.error('Resim indirme hatası:', error);
-        res.status(500).send('Resim indirilemedi.');
+        const sendResult = await client.sendMessage(chatId, media);
+        const log = `✅ MEDYA | IP: ${req.ip} | Numara: ${number} | Dosya: ${fileUrl} | ID: ${sendResult.id.id}`;
+        logToFile(log);
+        return res.status(200).send('Resim başarıyla gönderildi.');
+    } catch (err) {
+        const log = `❌ MEDYA | IP: ${req.ip} | Numara: ${number} | Dosya: ${fileUrl} | HATA: ${err.message}`;
+        logToFile(log);
+        return res.status(500).send('Resim gönderilemedi.');
     }
 });
 
-// URL'den video indirip WhatsApp üzerinden gönderme
+// ✅ VİDEO gönderme
 app.post('/send-video', async (req, res) => {
-    const number = req.body.number; // Telefon numarası
-    const fileUrl = req.body.fileUrl; // Video dosyasının URL'si
-  
-    const chatId = number + '@c.us'; // Chat ID oluşturma
-  
+    const number = req.body.number;
+    const fileUrl = req.body.fileUrl;
+    const chatId = number + '@c.us';
+
     try {
-      // Videoyu URL'den indir
-      const response = await axios({
-        url: fileUrl,
-        method: 'GET',
-        responseType: 'arraybuffer' // Video dosyasını binary formatında alıyoruz
-      });
-  
-      // Dosyayı Buffer olarak kullan ve base64'e çevir
-      const media = new MessageMedia('video/mp4', Buffer.from(response.data).toString('base64'));
-  
-      // WhatsApp üzerinden video gönder
-      client.sendMessage(chatId, media).then(response => {
-        console.log('Video başarıyla gönderildi:', response.id.id);
-        res.status(200).send('Video başarıyla gönderildi.');
-      }).catch(err => {
-        console.error('Video gönderilemedi:', err);
-        res.status(500).send('Video gönderilemedi.');
-      });
-  
-    } catch (error) {
-      console.error('Video indirme hatası:', error);
-      res.status(500).send('Video indirilemedi.');
+        const response = await axios.get(fileUrl, { responseType: 'arraybuffer' });
+        const media = new MessageMedia('video/mp4', Buffer.from(response.data).toString('base64'));
+        const sendResult = await client.sendMessage(chatId, media);
+        const log = `✅ VİDEO | IP: ${req.ip} | Numara: ${number} | Dosya: ${fileUrl} | ID: ${sendResult.id.id}`;
+        logToFile(log);
+        return res.status(200).send('Video başarıyla gönderildi.');
+    } catch (err) {
+        const log = `❌ VİDEO | IP: ${req.ip} | Numara: ${number} | Dosya: ${fileUrl} | HATA: ${err.message}`;
+        logToFile(log);
+        return res.status(500).send('Video gönderilemedi.');
     }
-  });
+});
 
 // Sunucuyu başlat
 const PORT = process.env.PORT || 3002;
