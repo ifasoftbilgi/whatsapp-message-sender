@@ -24,7 +24,7 @@ app.use((req, res, next) => {
     next();
 });
 
-// ✅ Log klasörü oluşturuluyor
+// ✅ Log klasörü oluştur
 const logDir = path.join(__dirname, 'logs');
 if (!fs.existsSync(logDir)) {
     fs.mkdirSync(logDir);
@@ -37,11 +37,11 @@ function logToFile(data) {
     fs.appendFileSync(logPath, `[${timestamp}] ${data}\n`);
 }
 
-// ✅ WhatsApp istemcisi
+// ✅ WhatsApp istemcisi başlatılıyor
 const client = new Client({
     authStrategy: new LocalAuth(),
     puppeteer: {
-        executablePath: '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome', // VPS'teysen uygun yolu yaz
+        executablePath: '/usr/bin/chromium-browser', // VPS'e uygun path
         args: ['--no-sandbox', '--disable-setuid-sandbox']
     }
 });
@@ -60,6 +60,7 @@ app.post('/send-message', async (req, res) => {
     const number = req.body.number;
     const message = req.body.message;
     const chatId = number + '@c.us';
+    const timestamp = new Date().toISOString();
 
     try {
         const response = await client.sendMessage(chatId, message);
@@ -67,9 +68,10 @@ app.post('/send-message', async (req, res) => {
             status: "success",
             type: "message",
             ip: req.ip,
-            number: number,
-            message: message,
-            messageId: response.id.id
+            number,
+            message,
+            messageId: response.id.id,
+            timestamp
         };
         logToFile(JSON.stringify(logData));
         return res.status(200).json(logData);
@@ -78,9 +80,10 @@ app.post('/send-message', async (req, res) => {
             status: "error",
             type: "message",
             ip: req.ip,
-            number: number,
-            message: message,
-            error: err.message
+            number,
+            message,
+            error: err.message,
+            timestamp
         };
         logToFile(JSON.stringify(logData));
         return res.status(500).json(logData);
@@ -92,6 +95,7 @@ app.post('/send-media', async (req, res) => {
     const number = req.body.number;
     const fileUrl = req.body.fileUrl;
     const chatId = number + '@c.us';
+    const timestamp = new Date().toISOString();
 
     try {
         const response = await axios.get(fileUrl, { responseType: 'arraybuffer' });
@@ -102,9 +106,10 @@ app.post('/send-media', async (req, res) => {
             status: "success",
             type: "media",
             ip: req.ip,
-            number: number,
-            fileUrl: fileUrl,
-            messageId: sendResult.id.id
+            number,
+            fileUrl,
+            messageId: sendResult.id.id,
+            timestamp
         };
         logToFile(JSON.stringify(logData));
         return res.status(200).json(logData);
@@ -113,9 +118,10 @@ app.post('/send-media', async (req, res) => {
             status: "error",
             type: "media",
             ip: req.ip,
-            number: number,
-            fileUrl: fileUrl,
-            error: err.message
+            number,
+            fileUrl,
+            error: err.message,
+            timestamp
         };
         logToFile(JSON.stringify(logData));
         return res.status(500).json(logData);
@@ -127,6 +133,7 @@ app.post('/send-video', async (req, res) => {
     const number = req.body.number;
     const fileUrl = req.body.fileUrl;
     const chatId = number + '@c.us';
+    const timestamp = new Date().toISOString();
 
     try {
         const response = await axios.get(fileUrl, { responseType: 'arraybuffer' });
@@ -137,9 +144,10 @@ app.post('/send-video', async (req, res) => {
             status: "success",
             type: "video",
             ip: req.ip,
-            number: number,
-            fileUrl: fileUrl,
-            messageId: sendResult.id.id
+            number,
+            fileUrl,
+            messageId: sendResult.id.id,
+            timestamp
         };
         logToFile(JSON.stringify(logData));
         return res.status(200).json(logData);
@@ -148,20 +156,21 @@ app.post('/send-video', async (req, res) => {
             status: "error",
             type: "video",
             ip: req.ip,
-            number: number,
-            fileUrl: fileUrl,
-            error: err.message
+            number,
+            fileUrl,
+            error: err.message,
+            timestamp
         };
         logToFile(JSON.stringify(logData));
         return res.status(500).json(logData);
     }
 });
 
-// ✅ Sunucuyu başlat
+// ✅ Sunucu başlatılıyor
 const PORT = process.env.PORT || 3002;
 app.listen(PORT, () => {
     console.log(`Sunucu çalışıyor; port: ${PORT}`);
 });
 
-// ✅ WhatsApp istemcisini başlat
+// ✅ WhatsApp istemcisi başlatılıyor
 client.initialize();
