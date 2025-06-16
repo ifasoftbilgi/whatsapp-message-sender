@@ -5,9 +5,12 @@ const bodyParser = require('body-parser');
 const axios = require('axios');
 const fs = require('fs');
 const path = require('path');
+const https = require('https'); // ✅ eklendi
 require('dotenv').config();
 
 const API_KEY = process.env.API_KEY;
+const PORT = process.env.PORT || 3002;
+
 const app = express();
 app.use(bodyParser.json());
 
@@ -41,16 +44,14 @@ function logToFile(data) {
 const client = new Client({
     authStrategy: new LocalAuth(),
     puppeteer: {
-        executablePath: '/usr/bin/chromium-browser', // VPS'e uygun path
+        executablePath: '/usr/bin/chromium-browser',
         args: ['--no-sandbox', '--disable-setuid-sandbox']
     }
 });
-
 client.on('qr', (qr) => {
     qrcode.generate(qr, { small: true });
     console.log('QR Kodunu tarayın.');
 });
-
 client.on('ready', () => {
     console.log('WhatsApp Web bağlantısı kuruldu.');
 });
@@ -166,10 +167,14 @@ app.post('/send-video', async (req, res) => {
     }
 });
 
-// ✅ Sunucu başlatılıyor
-const PORT = process.env.PORT || 3002;
-app.listen(PORT, () => {
-    console.log(`Sunucu çalışıyor; port: ${PORT}`);
+// ✅ HTTPS Sunucusu Başlatılıyor
+const sslOptions = {
+    key: fs.readFileSync('/etc/ssl/private/server.key'),
+    cert: fs.readFileSync('/etc/ssl/private/server.crt')
+};
+
+https.createServer(sslOptions, app).listen(PORT, () => {
+    console.log(`🔐 HTTPS sunucu ${PORT} portunda çalışıyor...`);
 });
 
 // ✅ WhatsApp istemcisi başlatılıyor
