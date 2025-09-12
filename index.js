@@ -5,7 +5,7 @@ const bodyParser = require('body-parser');
 const axios = require('axios');
 const fs = require('fs');
 const path = require('path');
-const https = require('https'); // ✅ eklendi
+const https = require('https');
 require('dotenv').config();
 
 const API_KEY = process.env.API_KEY;
@@ -56,15 +56,28 @@ client.on('ready', () => {
     console.log('WhatsApp Web bağlantısı kuruldu.');
 });
 
-// ✅ MESAJ GÖNDERME
+// ✅ MESAJ GÖNDERME (Numara doğrulamalı)
 app.post('/send-message', async (req, res) => {
     const number = req.body.number;
     const message = req.body.message;
-    const chatId = number + '@c.us';
     const timestamp = new Date().toISOString();
 
     try {
-        const response = await client.sendMessage(chatId, message);
+        const numberId = await client.getNumberId(number);
+        if (!numberId) {
+            const logData = {
+                status: "error",
+                type: "validation",
+                ip: req.ip,
+                number,
+                error: "Numara WhatsApp kullanıcısı değil",
+                timestamp
+            };
+            logToFile(JSON.stringify(logData));
+            return res.status(400).json(logData);
+        }
+
+        const response = await client.sendMessage(numberId._serialized, message);
         const logData = {
             status: "success",
             type: "message",
@@ -91,17 +104,30 @@ app.post('/send-message', async (req, res) => {
     }
 });
 
-// ✅ MEDYA GÖNDERME
+// ✅ MEDYA GÖNDERME (Numara doğrulamalı)
 app.post('/send-media', async (req, res) => {
     const number = req.body.number;
     const fileUrl = req.body.fileUrl;
-    const chatId = number + '@c.us';
     const timestamp = new Date().toISOString();
 
     try {
+        const numberId = await client.getNumberId(number);
+        if (!numberId) {
+            const logData = {
+                status: "error",
+                type: "validation",
+                ip: req.ip,
+                number,
+                error: "Numara WhatsApp kullanıcısı değil",
+                timestamp
+            };
+            logToFile(JSON.stringify(logData));
+            return res.status(400).json(logData);
+        }
+
         const response = await axios.get(fileUrl, { responseType: 'arraybuffer' });
         const media = new MessageMedia('image/jpeg', Buffer.from(response.data).toString('base64'));
-        const sendResult = await client.sendMessage(chatId, media);
+        const sendResult = await client.sendMessage(numberId._serialized, media);
 
         const logData = {
             status: "success",
@@ -129,17 +155,30 @@ app.post('/send-media', async (req, res) => {
     }
 });
 
-// ✅ VİDEO GÖNDERME
+// ✅ VİDEO GÖNDERME (Numara doğrulamalı)
 app.post('/send-video', async (req, res) => {
     const number = req.body.number;
     const fileUrl = req.body.fileUrl;
-    const chatId = number + '@c.us';
     const timestamp = new Date().toISOString();
 
     try {
+        const numberId = await client.getNumberId(number);
+        if (!numberId) {
+            const logData = {
+                status: "error",
+                type: "validation",
+                ip: req.ip,
+                number,
+                error: "Numara WhatsApp kullanıcısı değil",
+                timestamp
+            };
+            logToFile(JSON.stringify(logData));
+            return res.status(400).json(logData);
+        }
+
         const response = await axios.get(fileUrl, { responseType: 'arraybuffer' });
         const media = new MessageMedia('video/mp4', Buffer.from(response.data).toString('base64'));
-        const sendResult = await client.sendMessage(chatId, media);
+        const sendResult = await client.sendMessage(numberId._serialized, media);
 
         const logData = {
             status: "success",
@@ -169,8 +208,8 @@ app.post('/send-video', async (req, res) => {
 
 // ✅ HTTPS Sunucusu Başlatılıyor
 const sslOptions = {
-    key: fs.readFileSync('/etc/ssl/private/server.key'),
-    cert: fs.readFileSync('/etc/ssl/private/server.crt')
+    key: fs.readFileSync(path.join(__dirname, 'certs', 'server.key')),
+    cert: fs.readFileSync(path.join(__dirname, 'certs', 'server.crt'))
 };
 
 https.createServer(sslOptions, app).listen(PORT, () => {
