@@ -14,54 +14,62 @@ const PORT = process.env.PORT || 3002;
 const app = express();
 app.use(bodyParser.json());
 
-// ✅ API Key kontrolü
 app.use((req, res, next) => {
     res.header("Access-Control-Allow-Origin", "*");
     res.header("Access-Control-Allow-Headers", "Origin, X-Requested-With, Content-Type, Accept");
-
     const apiKey = req.headers['x-api-key'];
     if (!apiKey || apiKey !== API_KEY) {
         return res.status(401).json({ error: "Unauthorized: Invalid API Key" });
     }
-
     next();
 });
 
-// ✅ Log klasörü oluştur
+// ✅ Log klasörü
 const logDir = path.join(__dirname, 'logs');
-if (!fs.existsSync(logDir)) {
-    fs.mkdirSync(logDir);
-}
+if (!fs.existsSync(logDir)) fs.mkdirSync(logDir);
 
-// ✅ Log yazma fonksiyonu
 function logToFile(data) {
     const logPath = path.join(logDir, 'whatsapp.log');
     const timestamp = new Date().toISOString();
     fs.appendFileSync(logPath, `[${timestamp}] ${data}\n`);
 }
 
-// ✅ WhatsApp istemcisi başlatılıyor
+// ✅ WhatsApp istemcisi
 const client = new Client({
     authStrategy: new LocalAuth(),
     puppeteer: {
         executablePath: '/usr/bin/chromium-browser',
-       // executablePath: '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
         args: ['--no-sandbox', '--disable-setuid-sandbox']
     }
 });
+
 client.on('qr', (qr) => {
     qrcode.generate(qr, { small: true });
-    console.log('QR Kodunu tarayın.');  // terminalde oluşan qr code
+    console.log('QR Kodunu tarayın.');
 });
+
 client.on('ready', () => {
     console.log('WhatsApp Web bağlantısı kuruldu.');
 });
 
-// ✅ MESAJ GÖNDERME (Numara doğrulamalı)
+// ✅ MESAJ
 app.post('/send-message', async (req, res) => {
     const number = req.body.number;
     const message = req.body.message;
     const timestamp = new Date().toISOString();
+
+    if (number.startsWith("65")) {
+        const logData = {
+            status: "blocked",
+            reason: "Singapur numaralarına mesaj gönderimi engellendi",
+            ip: req.ip,
+            number,
+            message,
+            timestamp
+        };
+        logToFile(JSON.stringify(logData));
+        return res.status(403).json(logData);
+    }
 
     try {
         const numberId = await client.getNumberId(number);
@@ -105,11 +113,24 @@ app.post('/send-message', async (req, res) => {
     }
 });
 
-// ✅ MEDYA GÖNDERME (Numara doğrulamalı)
+// ✅ MEDYA
 app.post('/send-media', async (req, res) => {
     const number = req.body.number;
     const fileUrl = req.body.fileUrl;
     const timestamp = new Date().toISOString();
+
+    if (number.startsWith("65")) {
+        const logData = {
+            status: "blocked",
+            reason: "Singapur numaralarına medya gönderimi engellendi",
+            ip: req.ip,
+            number,
+            fileUrl,
+            timestamp
+        };
+        logToFile(JSON.stringify(logData));
+        return res.status(403).json(logData);
+    }
 
     try {
         const numberId = await client.getNumberId(number);
@@ -156,11 +177,24 @@ app.post('/send-media', async (req, res) => {
     }
 });
 
-// ✅ VİDEO GÖNDERME (Numara doğrulamalı)
+// ✅ VİDEO
 app.post('/send-video', async (req, res) => {
     const number = req.body.number;
     const fileUrl = req.body.fileUrl;
     const timestamp = new Date().toISOString();
+
+    if (number.startsWith("65")) {
+        const logData = {
+            status: "blocked",
+            reason: "Singapur numaralarına video gönderimi engellendi",
+            ip: req.ip,
+            number,
+            fileUrl,
+            timestamp
+        };
+        logToFile(JSON.stringify(logData));
+        return res.status(403).json(logData);
+    }
 
     try {
         const numberId = await client.getNumberId(number);
@@ -207,7 +241,7 @@ app.post('/send-video', async (req, res) => {
     }
 });
 
-// ✅ HTTPS Sunucusu Başlatılıyor
+// ✅ HTTPS başlat
 const sslOptions = {
     key: fs.readFileSync(path.join(__dirname, 'certs', 'server.key')),
     cert: fs.readFileSync(path.join(__dirname, 'certs', 'server.crt'))
@@ -217,5 +251,5 @@ https.createServer(sslOptions, app).listen(PORT, () => {
     console.log(`🔐 HTTPS sunucu ${PORT} portunda çalışıyor...`);
 });
 
-// ✅ WhatsApp istemcisi başlatılıyor
+// ✅ WhatsApp istemcisi başlat
 client.initialize();
