@@ -44,14 +44,14 @@ function logToFile(data) {
 const client = new Client({
     authStrategy: new LocalAuth(),
     puppeteer: {
-        //executablePath: '/usr/bin/chromium-browser',
-        executablePath: '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
+        executablePath: '/usr/bin/chromium-browser',
+       // executablePath: '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
         args: ['--no-sandbox', '--disable-setuid-sandbox']
     }
 });
 client.on('qr', (qr) => {
     qrcode.generate(qr, { small: true });
-    console.log('QR Kodunu tarayın.');
+    console.log('QR Kodunu tarayın.');  // terminalde oluşan qr code
 });
 client.on('ready', () => {
     console.log('WhatsApp Web bağlantısı kuruldu.');
