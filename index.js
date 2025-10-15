@@ -38,7 +38,8 @@ function logToFile(data) {
 const client = new Client({
     authStrategy: new LocalAuth(),
     puppeteer: {
-        executablePath: '/usr/bin/chromium-browser',
+       // executablePath: '/usr/bin/chromium-browser',
+        executablePath : '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
         args: ['--no-sandbox', '--disable-setuid-sandbox']
     }
 });
@@ -51,6 +52,8 @@ client.on('qr', (qr) => {
 client.on('ready', () => {
     console.log('WhatsApp Web bağlantısı kuruldu.');
 });
+
+
 
 // ✅ MESAJ
 app.post('/send-message', async (req, res) => {
@@ -240,6 +243,173 @@ app.post('/send-video', async (req, res) => {
         return res.status(500).json(logData);
     }
 });
+
+// ✅ SON X SAATTE GELEN MESAJLAR
+app.post('/get-recent-messages', async (req, res) => {
+    const hours = parseInt(req.body.hours || "24");
+    const since = Date.now() - (hours * 60 * 60 * 1000);
+
+    try {
+        const chats = await client.getChats();
+        let messages = [];
+
+        for (const chat of chats) {
+            // Grup dışı mesajlar
+            if (!chat.isGroup) {
+                const msgs = await chat.fetchMessages({ limit: 200 });
+                for (const msg of msgs) {
+                    const msgTime = msg.timestamp * 1000;
+                    if (msgTime >= since) {
+                        // Gönderici ve alıcıyı ayırt et
+                        const number = msg.fromMe
+                            ? msg.to.split('@')[0]       // Mesajı ben gönderdiğimde karşı taraf
+                            : msg.from.split('@')[0];    // Mesaj bana geldiyse gönderen
+
+                        messages.push({
+                            id: msg.id.id,
+                            fromMe: msg.fromMe,
+                            number: number,
+                            timestamp: new Date(msgTime).toISOString(),
+                            message: msg.body || "",
+                            hasMedia: msg.hasMedia
+                        });
+                    }
+                }
+            }
+        }
+
+        messages.sort((a, b) => b.timestamp.localeCompare(a.timestamp));
+        res.status(200).json({ status: "success", count: messages.length, messages });
+    } catch (err) {
+        res.status(500).json({
+            status: "error",
+            error: err.message
+        });
+    }
+});
+
+// ✅ SON X SAATTE X NUMARADAN GELEN MESAJLAR
+app.post('/get-messages-from-numbers', async (req, res) => {
+    const { numbers, hours } = req.body;
+
+    if (!Array.isArray(numbers) || numbers.length === 0) {
+        return res.status(400).json({ error: 'En az bir numara belirtilmelidir.' });
+    }
+
+    const since = Date.now() - (parseInt(hours || "24") * 60 * 60 * 1000);
+    const results = [];
+
+    for (const number of numbers) {
+        const chatId = `${number}@c.us`;
+
+        try {
+            const chat = await client.getChatById(chatId);
+            const messages = await chat.fetchMessages({ limit: 100 });
+
+            const filtered = messages
+                .filter(msg => msg.timestamp * 1000 >= since)
+                .map(msg => ({
+                    id: msg.id.id,
+                    fromMe: msg.fromMe,
+                    number: msg.fromMe
+                        ? msg.to.split('@')[0]
+                        : msg.from.split('@')[0],
+                    timestamp: new Date(msg.timestamp * 1000).toISOString(),
+                    message: msg.body || "",
+                    hasMedia: msg.hasMedia
+                }));
+
+            results.push({ number, count: filtered.length, messages: filtered });
+
+        } catch (err) {
+            results.push({ number, error: err.message });
+        }
+    }
+
+    res.json({ status: "success", requested: numbers.length, results });
+});
+
+// ✅ Belirli bir mesaj ID'sinden medya bilgisi al (Binary içerik ile)
+app.post('/get-media-by-id', async (req, res) => {
+    const messageId = req.body.messageId;
+
+    if (!messageId) {
+        return res.status(400).json({ status: "error", error: "messageId zorunludur." });
+    }
+
+    try {
+        const chats = await client.getChats();
+        for (const chat of chats) {
+            const messages = await chat.fetchMessages({ limit: 100 });
+            const found = messages.find(msg => msg.id.id === messageId);
+
+            if (found) {
+                if (!found.hasMedia) {
+                    return res.status(404).json({ status: "error", error: "Mesaj bir medya içermiyor." });
+                }
+
+                const media = await found.downloadMedia();
+                const mediaBuffer = Buffer.from(media.data, 'base64');
+
+                return res.status(200).json({
+                    status: "success",
+                    messageId: found.id.id,
+                    number: found.fromMe 
+                        ? found.to.split('@')[0] 
+                        : found.from.split('@')[0],
+                    timestamp: new Date(found.timestamp * 1000).toISOString(),
+                    mediaType: media.mimetype,
+                    mediaFileName: media.filename,
+                    mediaContent: mediaBuffer.toString('base64') // Dilersen binary de dönebilirim
+                });
+            }
+        }
+
+        return res.status(404).json({ status: "error", error: "Mesaj ID bulunamadı." });
+
+    } catch (err) {
+        return res.status(500).json({
+            status: "error",
+            error: err.message
+        });
+    }
+});
+
+app.post('/get-media-by-id-from-numbers', async (req, res) => {
+    const { numbers, message_id } = req.body;
+
+    if (!Array.isArray(numbers) || !message_id) {
+        return res.status(400).json({ status: "error", error: "numbers (array) ve message_id zorunludur." });
+    }
+
+    try {
+        for (const number of numbers) {
+            const chatId = `${number}@c.us`;
+            const chat = await client.getChatById(chatId);
+            const messages = await chat.fetchMessages({ limit: 200 });
+
+            const found = messages.find(msg => msg.id.id === message_id);
+            if (found && found.hasMedia) {
+                const media = await found.downloadMedia();
+                return res.status(200).json({
+                    status: "success",
+                    messageId: found.id.id,
+                    number: number,
+                    timestamp: new Date(found.timestamp * 1000).toISOString(),
+                    mediaType: media.mimetype,
+                    mediaContent: media.data // base64
+                });
+            }
+        }
+
+        return res.status(404).json({ status: "error", error: "Belirtilen numaralardaki mesajlar arasında bu ID bulunamadı veya medya içermiyor." });
+    } catch (err) {
+        return res.status(500).json({ status: "error", error: err.message });
+    }
+});
+
+
+
 
 // ✅ HTTPS başlat
 const sslOptions = {
