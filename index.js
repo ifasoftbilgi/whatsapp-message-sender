@@ -389,20 +389,29 @@ app.post('/get-media-by-id-from-numbers', async (req, res) => {
             const messages = await chat.fetchMessages({ limit: 200 });
 
             const found = messages.find(msg => msg.id.id === message_id);
-            if (found && found.hasMedia) {
-                const media = await found.downloadMedia();
+            if (found) {
+                let media = null;
+                if (found.hasMedia) {
+                    media = await found.downloadMedia();
+                }
+
                 return res.status(200).json({
                     status: "success",
                     messageId: found.id.id,
                     number: number,
                     timestamp: new Date(found.timestamp * 1000).toISOString(),
-                    mediaType: media.mimetype,
-                    mediaContent: media.data // base64
+                    text: found.body || "",
+                    mediaType: media?.mimetype || null,
+                    mediaFileName: media?.filename || null,
+                    mediaContent: media?.data || null
                 });
             }
         }
 
-        return res.status(404).json({ status: "error", error: "Belirtilen numaralardaki mesajlar arasında bu ID bulunamadı veya medya içermiyor." });
+        return res.status(404).json({
+            status: "error",
+            error: "Belirtilen numaralardaki mesajlar arasında bu ID bulunamadı."
+        });
     } catch (err) {
         return res.status(500).json({ status: "error", error: err.message });
     }
