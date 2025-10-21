@@ -304,25 +304,41 @@ app.post('/get-messages-from-numbers', async (req, res) => {
 
         try {
             const chat = await client.getChatById(chatId);
+
+            // Eğer chat hiç yoksa veya hiç mesaj yoksa atla
+            if (!chat || typeof chat.fetchMessages !== 'function') {
+                continue; // bu numara hiç işleme alınmasın
+            }
+
             const messages = await chat.fetchMessages({ limit: 100 });
 
-            const filtered = messages
-                .filter(msg => msg.timestamp * 1000 >= since)
-                .map(msg => ({
-                    id: msg.id.id,
-                    fromMe: msg.fromMe,
-                    number: msg.fromMe
-                        ? msg.to.split('@')[0]
-                        : msg.from.split('@')[0],
-                    timestamp: new Date(msg.timestamp * 1000).toISOString(),
-                    message: msg.body || "",
-                    hasMedia: msg.hasMedia
-                }));
+            // Gerçekten mesaj yoksa veya hiçbiri eşleşmiyorsa atla
+            if (!Array.isArray(messages) || messages.length === 0) {
+                continue;
+            }
 
-            results.push({ number, count: filtered.length, messages: filtered });
+            const filtered = messages
+            .filter(msg => msg.timestamp * 1000 >= since)
+            .map(msg => ({
+            id: msg.id.id,
+            fromMe: msg.fromMe,
+             number: msg.fromMe
+            ? msg.to.split('@')[0]
+            : msg.from.split('@')[0],
+            timestamp: new Date(msg.timestamp * 1000).toISOString(),
+            message: msg.body || "",
+            hasMedia: msg.hasMedia,
+            chatId: chatId // <--- bunu ekle
+         }));
+
+            // Eğer süzülmüş mesaj da yoksa boş nesne ekleme
+            if (filtered.length > 0) {
+                results.push({ number, count: filtered.length, messages: filtered });
+            }
 
         } catch (err) {
-            results.push({ number, error: err.message });
+            // Sadece gerçek hata varsa ekle, istemiyorsan bu bloğu silebilirsin
+            console.error(`Hata (${number}): ${err.message}`);
         }
     }
 
@@ -375,45 +391,52 @@ app.post('/get-media-by-id', async (req, res) => {
     }
 });
 
-app.post('/get-media-by-id-from-numbers', async (req, res) => {
-    const { numbers, message_id } = req.body;
+app.post('/get-media-by-id-from-chat', async (req, res) => {
+    const { chatId, message_id } = req.body;
 
-    if (!Array.isArray(numbers) || !message_id) {
-        return res.status(400).json({ status: "error", error: "numbers (array) ve message_id zorunludur." });
+    if (!chatId || !message_id) {
+        return res.status(400).json({
+            status: "error",
+            error: "chatId ve message_id zorunludur."
+        });
     }
 
     try {
-        for (const number of numbers) {
-            const chatId = `${number}@c.us`;
-            const chat = await client.getChatById(chatId);
-            const messages = await chat.fetchMessages({ limit: 200 });
+        const chat = await client.getChatById(chatId);
+        const messages = await chat.fetchMessages({ limit: 200 });
 
-            const found = messages.find(msg => msg.id.id === message_id);
-            if (found) {
-                let media = null;
-                if (found.hasMedia) {
-                    media = await found.downloadMedia();
-                }
-
-                return res.status(200).json({
-                    status: "success",
-                    messageId: found.id.id,
-                    number: number,
-                    timestamp: new Date(found.timestamp * 1000).toISOString(),
-                    text: found.body || "",
-                    mediaType: media?.mimetype || null,
-                    mediaFileName: media?.filename || null,
-                    mediaContent: media?.data || null
-                });
+        const found = messages.find(msg => msg.id.id === message_id);
+        if (found) {
+            let media = null;
+            if (found.hasMedia) {
+                media = await found.downloadMedia();
             }
+
+            return res.status(200).json({
+                status: "success",
+                chatId: chatId,
+                messageId: found.id.id,
+                number: found.fromMe
+                    ? found.to.split('@')[0]
+                    : found.from.split('@')[0],
+                timestamp: new Date(found.timestamp * 1000).toISOString(),
+                text: found.body || "",
+                mediaType: media?.mimetype || null,
+                mediaFileName: media?.filename || null,
+                mediaContent: media?.data || null
+            });
         }
 
         return res.status(404).json({
             status: "error",
-            error: "Belirtilen numaralardaki mesajlar arasında bu ID bulunamadı."
+            error: "Bu chatId içinde bu ID'ye sahip mesaj bulunamadı."
         });
+
     } catch (err) {
-        return res.status(500).json({ status: "error", error: err.message });
+        return res.status(500).json({
+            status: "error",
+            error: err.message
+        });
     }
 });
 
