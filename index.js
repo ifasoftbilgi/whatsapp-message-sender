@@ -9,6 +9,7 @@ const https = require('https');
 require('dotenv').config();
 
 const API_KEY = process.env.API_KEY;
+const p_executablePath = process.env.puppeteer;
 const PORT = process.env.PORT || 3002;
 
 const app = express();
@@ -39,7 +40,8 @@ const client = new Client({
     authStrategy: new LocalAuth(),
     puppeteer: {
        // executablePath: '/usr/bin/chromium-browser',
-        executablePath : '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
+       // executablePath : p_executablePath || '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
+        executablePath : p_executablePath,
         args: ['--no-sandbox', '--disable-setuid-sandbox']
     }
 });
