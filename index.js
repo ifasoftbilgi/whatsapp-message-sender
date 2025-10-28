@@ -40,8 +40,7 @@ const client = new Client({
     authStrategy: new LocalAuth(),
     puppeteer: {
        // executablePath: '/usr/bin/chromium-browser',
-       // executablePath : p_executablePath || '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
-        executablePath : p_executablePath,
+        executablePath : p_executablePath || '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
         args: ['--no-sandbox', '--disable-setuid-sandbox']
     }
 });
@@ -393,7 +392,7 @@ app.post('/get-media-by-id', async (req, res) => {
     }
 });
 
-app.post('/get-media-by-id-from-chat', async (req, res) => {
+app.post('/get-media-from-chat-by-id', async (req, res) => {
     const { chatId, message_id } = req.body;
 
     if (!chatId || !message_id) {
