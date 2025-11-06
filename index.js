@@ -413,6 +413,11 @@ app.post('/get-media-from-chat-by-id', async (req, res) => {
                 media = await found.downloadMedia();
             }
 
+            // ✅ media.filename yoksa otomatik oluştur
+            const extension = media?.mimetype?.split('/')[1] || "bin";
+            const generatedFileName = `media_${Date.now()}.${extension}`;
+            const fileName = media?.filename || generatedFileName;
+
             return res.status(200).json({
                 status: "success",
                 chatId: chatId,
@@ -423,7 +428,7 @@ app.post('/get-media-from-chat-by-id', async (req, res) => {
                 timestamp: new Date(found.timestamp * 1000).toISOString(),
                 text: found.body || "",
                 mediaType: media?.mimetype || null,
-                mediaFileName: media?.filename || null,
+                mediaFileName: fileName,   // ✅ Artık null dönmez
                 mediaContent: media?.data || null
             });
         }
@@ -438,6 +443,49 @@ app.post('/get-media-from-chat-by-id', async (req, res) => {
             status: "error",
             error: err.message
         });
+    }
+});
+
+// ✅ BASE64 MEDYA KAYDETME ENDPOINTİ
+app.post('/save-media-file', (req, res) => {
+    const { base64, fileName } = req.body;
+
+    if (!base64 || !fileName) {
+        return res.status(400).json({ error: "base64 ve fileName zorunludur." });
+    }
+
+    try {
+        const cleanedBase64 = base64.replace(/^data:\w+\/\w+;base64,/, '');
+        const saveDir = path.join(__dirname, 'uploads');
+
+        // uploads klasörü yoksa oluştur
+        if (!fs.existsSync(saveDir)) {
+            fs.mkdirSync(saveDir, { recursive: true });
+        }
+
+        const savePath = path.join(saveDir, fileName);
+        fs.writeFileSync(savePath, cleanedBase64, { encoding: 'base64' });
+
+        const logData = {
+            status: "success",
+            fileName,
+            path: `/uploads/${fileName}`,
+            ip: req.ip,
+            timestamp: new Date().toISOString()
+        };
+        logToFile(JSON.stringify(logData));
+
+        return res.status(200).json(logData);
+    } catch (err) {
+        const logData = {
+            status: "error",
+            fileName,
+            error: err.message,
+            ip: req.ip,
+            timestamp: new Date().toISOString()
+        };
+        logToFile(JSON.stringify(logData));
+        return res.status(500).json({ error: "Dosya kaydedilemedi." });
     }
 });
 
